@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Baukampf</title>
+<style>
+  :root{
+    --accent:#ffce3d;
+    --accent2:#3dd6ff;
+    --danger:#ff4d4d;
+    --panel:rgba(10,14,20,0.72);
+    --panel-border:rgba(255,255,255,0.14);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none;}
+  html,body{margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#0a0e14; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; touch-action:none;}
+  #c{position:fixed; inset:0; display:block;}
+
+  #hud{position:fixed; inset:0; pointer-events:none;}
+  #hud .interactive{pointer-events:auto;}
+
+  /* Fadenkreuz */
+  #crosshair{
+    position:fixed; top:50%; left:50%; width:14px; height:14px;
+    transform:translate(-50%,-50%);
+    border:2px solid rgba(255,255,255,0.85);
+    border-radius:50%;
+    box-shadow:0 0 6px rgba(0,0,0,0.6);
+  }
+
+  /* Joystick */
+  #joystickZone{
+    position:fixed; left:22px; bottom:22px; width:130px; height:130px;
+    border-radius:50%; background:var(--panel); border:1px solid var(--panel-border);
+  }
+  #joystickKnob{
+    position:absolute; left:50%; top:50%; width:56px; height:56px; margin:-28px 0 0 -28px;
+    border-radius:50%; background:linear-gradient(180deg,#3a4658,#232b36);
+    border:1px solid rgba(255,255,255,0.25);
+  }
+
+  /* Bau-Buttons */
+  #buildBar{
+    position:fixed; right:18px; bottom:22px; display:flex; flex-direction:column-reverse; gap:10px; align-items:center;
+  }
+  .ui-btn{
+    pointer-events:auto;
+    width:62px; height:62px; border-radius:16px;
+    background:var(--panel); border:1px solid var(--panel-border);
+    color:#fff; font-size:11px; font-weight:600; letter-spacing:0.2px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    box-shadow:0 3px 10px rgba(0,0,0,0.35);
+  }
+  .ui-btn .ic{font-size:22px; line-height:1;}
+  .ui-btn.active{background:linear-gradient(180deg,var(--accent),#c99a1e); color:#1a1300; border-color:transparent;}
+  .ui-btn.wide{width:auto; padding:0 16px; flex-direction:row; gap:8px;}
+
+  #jumpBtn{
+    position:fixed; right:96px; bottom:186px; width:60px; height:60px; border-radius:50%;
+    background:var(--panel); border:1px solid var(--panel-border); color:#fff; font-size:11px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; pointer-events:auto;
+  }
+
+  .ui-btn:active, #placeBtn:active, #jumpBtn:active, .tileBtn:active,
+  .ui-btn.pressed, #placeBtn.pressed, #jumpBtn.pressed, .tileBtn.pressed{
+    filter:brightness(0.82); transform:scale(0.94);
+  }
+  .ui-btn, #placeBtn, #jumpBtn, .tileBtn{ transition:transform .08s ease, filter .08s ease; }
+
+  #placeBtn{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+    width:128px; height:78px; border-radius:22px;
+    background:linear-gradient(180deg,#5cf090,#1e9a45); border:2px solid rgba(255,255,255,0.55);
+    color:#04250f; font-size:15px; font-weight:800; letter-spacing:0.3px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+    box-shadow:0 8px 20px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.5);
+    pointer-events:auto; z-index:5;
+  }
+  #placeBtn .ic{font-size:28px; line-height:1;}
+  #placeBtn:active, #placeBtn.pressed{filter:brightness(0.88); transform:translateX(-50%) scale(0.95);}
+
+  #topBar{position:fixed; top:14px; left:0; right:0; display:flex; justify-content:space-between; align-items:flex-start; padding:0 14px;}
+  #title{
+    color:#fff; font-weight:800; font-size:15px; letter-spacing:0.3px;
+    background:var(--panel); border:1px solid var(--panel-border); padding:8px 14px; border-radius:12px;
+  }
+  #editToggle.on{background:linear-gradient(180deg,var(--accent2),#1b8fab); color:#00232b; border-color:transparent;}
+
+  #editPanel{
+    position:fixed; left:50%; bottom:150px; transform:translateX(-50%);
+    display:none; flex-direction:column; align-items:center; gap:10px; pointer-events:auto;
+  }
+  #editPanel.show{display:flex;}
+  #editActions{display:flex; gap:10px;}
+  #editActions .ui-btn{width:auto; padding:0 18px; flex-direction:row; gap:8px;}
+  #editActions .del{background:linear-gradient(180deg,var(--danger),#8f1f1f); border-color:transparent;}
+
+  /* Fortnite-artiges Segment-Raster zum Bearbeiten einer Wand */
+  #tileGrid{
+    display:none;
+    grid-template-columns:repeat(2,54px);
+    grid-template-rows:repeat(2,54px);
+    gap:4px;
+    background:var(--panel); border:1px solid var(--panel-border);
+    padding:6px; border-radius:12px;
+  }
+  #tileGrid.show{display:grid;}
+  .tileBtn{
+    border-radius:6px; border:1px solid rgba(255,255,255,0.35);
+    background:linear-gradient(180deg,#d7cdb5,#b7a785);
+  }
+  .tileBtn.open{
+    background:repeating-linear-gradient(45deg, rgba(255,255,255,0.08) 0 6px, rgba(0,0,0,0.15) 6px 12px);
+    border-style:dashed; opacity:0.6;
+  }
+  #tileHint{color:#fff; font-size:11px; text-align:center; opacity:0.85; max-width:150px;}
+
+  #hint{
+    position:fixed; top:64px; left:50%; transform:translateX(-50%);
+    color:#fff; background:var(--panel); border:1px solid var(--panel-border);
+    padding:8px 14px; border-radius:10px; font-size:12.5px; max-width:86%; text-align:center;
+    transition:opacity .5s;
+  }
+  #resList{position:fixed; top:14px; left:14px; display:none;}
+
+  #loading{
+    position:fixed; inset:0; background:#0a0e14; color:#fff; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:10px; z-index:50; font-size:14px;
+  }
+  #loading b{font-size:20px; color:var(--accent);}
+</style>
+</head>
+<body>
+
+<div id="loading"><b>Baukampf</b><div>Lade Welt…</div></div>
+
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="crosshair"></div>
+
+  <div id="topBar">
+    <div id="title">🏗️ Baukampf</div>
+    <button id="editToggle" class="ui-btn interactive">✏️<span>Editieren</span></button>
+  </div>
+
+  <div id="hint">Bauteil wählen, in Blickrichtung erscheint die Vorschau, dann 🔨 Platzieren tippen</div>
+
+  <div id="joystickZone" class="interactive">
+    <div id="joystickKnob"></div>
+  </div>
+
+  <button id="jumpBtn" class="interactive">SPRUNG</button>
+
+  <button id="placeBtn" class="interactive"><span class="ic">🔨</span><span>Platzieren</span></button>
+
+  <div id="buildBar">
+    <button class="ui-btn interactive" data-piece="wall"><span class="ic">▮</span><span>Wand</span></button>
+    <button class="ui-btn interactive" data-piece="floor"><span class="ic">▬</span><span>Boden</span></button>
+    <button class="ui-btn interactive" data-piece="ramp"><span class="ic">◢</span><span>Rampe</span></button>
+  </div>
+
+  <div id="editPanel">
+    <div id="tileGrid" class="interactive">
+      <button class="tileBtn interactive" data-tile="0"></button>
+      <button class="tileBtn interactive" data-tile="1"></button>
+      <button class="tileBtn interactive" data-tile="2"></button>
+      <button class="tileBtn interactive" data-tile="3"></button>
+    </div>
+    <div id="tileHint" style="display:none;">Segmente antippen: öffnen/schließen (Tür, Fenster, Durchgang)</div>
+    <div id="editActions">
+      <button id="rotateBtn" class="ui-btn interactive">⟳<span>Drehen</span></button>
+      <button id="deleteBtn" class="ui-btn interactive del">✕<span>Löschen</span></button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Grundgerüst ----------
+  const canvas = document.getElementById('c');
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.shadowMap.enabled = true;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x8fd0f2);
+  scene.fog = new THREE.Fog(0x8fd0f2, 60, 220);
+
+  const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 500);
+
+  function resize(){
+    renderer.setSize(innerWidth, innerHeight);
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Licht
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x445566, 0.9);
+  scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff2d6, 1.0);
+  sun.position.set(60,90,40);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048,2048);
+  sun.shadow.camera.left=-120; sun.shadow.camera.right=120;
+  sun.shadow.camera.top=120; sun.shadow.camera.bottom=-120;
+  sun.shadow.camera.far=300;
+  scene.add(sun);
+
+  // Boden
+  const GROUND_SIZE = 260;
+  const groundMat = new THREE.MeshStandardMaterial({color:0x5fae4f, roughness:0.95});
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(GROUND_SIZE,GROUND_SIZE,1,1), groundMat);
+  ground.rotation.x = -Math.PI/2;
+  ground.receiveShadow = true;
+  ground.name = "ground";
+  scene.add(ground);
+
+  const grid = new THREE.GridHelper(GROUND_SIZE, GROUND_SIZE/4, 0x2c6b26, 0x3f8a37);
+  grid.position.y = 0.01;
+  scene.add(grid);
+
+  // Ein paar Landschafts-Hügel/Häuser als Deko + Kollisionsobjekte, damit man Baustellen hat
+  const collidables = [ground]; // alles worauf man stehen / womit man kollidieren kann
+  function addBox(x,y,z,sx,sy,sz,color){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz), new THREE.MeshStandardMaterial({color, roughness:0.8}));
+    m.position.set(x,y,z);
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m);
+    collidables.push(m);
+    return m;
+  }
+  addBox(10,1,-14, 6,2,6, 0x9a8060);
+  addBox(-16,1.5,10, 5,3,5, 0x8899aa);
+  addBox(0,0.5,-30, 20,1,4, 0xc2b280);
+
+  // Skybox-Deko: entfernte Berge
+  for(let i=0;i<8;i++){
+    const a = (i/8)*Math.PI*2;
+    const r = 110;
+    addBox(Math.cos(a)*r, 8, Math.sin(a)*r, 14, 16+Math.random()*10, 14, 0x6a7f6a);
+  }
+
+  // ---------- Bau-System ----------
+  const GRID = 4;          // Zellgröße
+  const THICK = 0.3;       // Bauteil-Dicke
+  const buildings = [];    // platzierte Teile (für Kollision & Bearbeiten)
+
+  const baseColors = { wall:0xd7cdb5, floor:0xb99a6b, ramp:0xc7ae82 };
+  function newPieceMaterial(type){
+    return new THREE.MeshStandardMaterial({color:baseColors[type], roughness:0.85});
+  }
+  const ghostMaterials = {
+    wall:  new THREE.MeshBasicMaterial({color:0xffce3d, transparent:true, opacity:0.4}),
+    floor: new THREE.MeshBasicMaterial({color:0xffce3d, transparent:true, opacity:0.4}),
+    ramp:  new THREE.MeshBasicMaterial({color:0xffce3d, transparent:true, opacity:0.4}),
+  };
+
+  function pieceGeometry(type, dominantX){
+    if(type === 'floor'){
+      return new THREE.BoxGeometry(GRID, THICK, GRID);
+    }
+    // Rampe: die lange Achse liegt in Blickrichtung (X oder Z), je nachdem wohin man schaut
+    return dominantX ? new THREE.BoxGeometry(GRID*1.42, THICK, GRID)
+                      : new THREE.BoxGeometry(GRID, THICK, GRID*1.42);
+  }
+
+  // Wände bestehen aus 4 Segmenten (2x2), die einzeln geöffnet/geschlossen werden
+  // können - wie beim Editieren in Fortnite (Tür, Fenster, Durchgang ...).
+  function makeWallPiece(cell, dominantX, ghost){
+    const group = new THREE.Group();
+    const {cx,cy,cz} = cell;
+    const centerY = cy*GRID + GRID/2;
+    group.position.set(cx*GRID, centerY, cz*GRID);
+    group.rotation.y = dominantX ? Math.PI/2 : 0;
+
+    const tiles = [];
+    const half = GRID/2;
+    const offsets = [ [-half/2, half/2], [half/2, half/2], [-half/2,-half/2], [half/2,-half/2] ]; // TL,TR,BL,BR
+    for(let i=0;i<4;i++){
+      const geo = new THREE.BoxGeometry(half, half, THICK);
+      const mat = ghost ? ghostMaterials.wall : newPieceMaterial('wall');
+      const tile = new THREE.Mesh(geo, mat);
+      tile.position.set(offsets[i][0], offsets[i][1], 0);
+      tile.castShadow = !ghost; tile.receiveShadow = !ghost;
+      tile.userData.tileIndex = i;
+      tile.userData.parentPiece = group;
+      group.add(tile);
+      tiles.push(tile);
+    }
+    group.userData.isPiece = true;
+    group.userData.type = 'wall';
+    group.userData.cell = cell;
+    group.userData.dominantX = dominantX;
+    group.userData.sign = 0;
+    group.userData.tiles = tiles;
+    return group;
+  }
+
+  function makePieceMesh(type, cell, dominantX, sign, ghost){
+    if(type === 'wall') return makeWallPiece(cell, dominantX, ghost);
+    const geo = pieceGeometry(type, dominantX);
+    const material = ghost ? ghostMaterials[type] : newPieceMaterial(type);
+    const mesh = new THREE.Mesh(geo, material);
+    const {cx,cy,cz} = cell;
+    const centerY = cy*GRID + GRID/2;
+    if(type === 'floor'){
+      mesh.position.set(cx*GRID, cy*GRID + THICK/2, cz*GRID);
+    } else { // ramp: steigt automatisch in die Richtung an, in die man schaut
+      mesh.position.set(cx*GRID, centerY, cz*GRID);
+      mesh.rotation.set(0,0,0);
+      if(dominantX){ mesh.rotation.z = sign*Math.PI/4; } else { mesh.rotation.x = -sign*Math.PI/4; }
+    }
+    mesh.castShadow = !ghost; mesh.receiveShadow = !ghost;
+    mesh.userData.isPiece = true;
+    mesh.userData.type = type;
+    mesh.userData.cell = cell;
+    mesh.userData.dominantX = dominantX;
+    mesh.userData.sign = sign;
+    return mesh;
+  }
+
+  function placeCurrentGhost(){
+    const {cell, dominantX, sign} = currentTargetCell();
+    updateGhost(cell, dominantX, sign);
+  }
+
+  let selectedPiece = 'wall';
+  document.querySelectorAll('#buildBar .ui-btn').forEach(btn=>{
+    bindTap(btn, ()=>{
+      document.querySelectorAll('#buildBar .ui-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedPiece = btn.dataset.piece;
+      placeCurrentGhost();
+    });
+  });
+  document.querySelector('#buildBar .ui-btn[data-piece="wall"]').classList.add('active');
+
+  // Geist-Vorschau: folgt immer der Blickrichtung
+  let ghostMesh = null;
+  function updateGhost(cell, dominantX, sign){
+    if(ghostMesh){ scene.remove(ghostMesh); ghostMesh=null; }
+    ghostMesh = makePieceMesh(selectedPiece, cell, dominantX, sign, true);
+    scene.add(ghostMesh);
+  }
+
+  function currentTargetCell(){
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    const eye = camera.position.clone();
+    const target = eye.add(dir.clone().multiplyScalar(GRID));
+    const cx = Math.round(target.x/GRID);
+    const cz = Math.round(target.z/GRID);
+    const cy = Math.floor(target.y/GRID);
+    const dominantX = Math.abs(dir.x) >= Math.abs(dir.z);
+    // Vorzeichen der Blickrichtung auf der jeweils dominanten Achse - bestimmt
+    // z.B. bei Rampen, in welche Richtung sie automatisch ansteigen.
+    const sign = dominantX ? (dir.x >= 0 ? 1 : -1) : (dir.z >= 0 ? 1 : -1);
+    return {cell:{cx,cy,cz}, dominantX, sign};
+  }
+
+  function registerCollidables(root){
+    if(root.userData.type === 'wall'){
+      root.userData.tiles.forEach(t => collidables.push(t));
+    } else {
+      collidables.push(root);
+    }
+  }
+  function unregisterCollidables(root){
+    const list = root.userData.type === 'wall' ? root.userData.tiles : [root];
+    list.forEach(obj=>{
+      const i = collidables.indexOf(obj);
+      if(i>-1) collidables.splice(i,1);
+    });
+  }
+
+  function buildPiece(){
+    if(editMode) return;
+    const {cell, dominantX, sign} = currentTargetCell();
+    const root = makePieceMesh(selectedPiece, cell, dominantX, sign, false);
+    scene.add(root);
+    buildings.push(root);
+    registerCollidables(root);
+    flashHint('Platziert: ' + labelFor(selectedPiece));
+  }
+  function labelFor(t){ return t==='wall'?'Wand':(t==='floor'?'Boden':'Rampe'); }
+
+  bindTap(document.getElementById('placeBtn'), buildPiece);
+
+  // ---------- Bearbeiten-Modus (Fortnite-artig: Wand-Segmente einzeln öffnen) ----------
+  let editMode = false;
+  let selectedRoot = null;   // Gruppe (Wand) oder Mesh (Boden/Rampe)
+  const editToggle = document.getElementById('editToggle');
+  const editPanel = document.getElementById('editPanel');
+  const tileGrid = document.getElementById('tileGrid');
+  const tileHint = document.getElementById('tileHint');
+  const rotateBtn = document.getElementById('rotateBtn');
+  const deleteBtn = document.getElementById('deleteBtn');
+  const tileButtons = Array.from(document.querySelectorAll('.tileBtn'));
+
+  function setEmissiveAll(root, hex){
+    const mats = root.userData.type === 'wall'
+      ? root.userData.tiles.map(t=>t.material)
+      : [root.material];
+    mats.forEach(m=>m.emissive.setHex(hex));
+  }
+
+  function refreshTileButtons(){
+    if(!selectedRoot || selectedRoot.userData.type !== 'wall') return;
+    selectedRoot.userData.tiles.forEach((tile, i)=>{
+      tileButtons[i].classList.toggle('open', !tile.visible);
+    });
+  }
+
+  function clearSelection(){
+    if(selectedRoot){ setEmissiveAll(selectedRoot, 0x000000); }
+    selectedRoot = null;
+    editPanel.classList.remove('show');
+    tileGrid.classList.remove('show');
+    tileHint.style.display = 'none';
+  }
+
+  bindTap(editToggle, ()=>{
+    editMode = !editMode;
+    editToggle.classList.toggle('on', editMode);
+    clearSelection();
+    if(ghostMesh){ scene.remove(ghostMesh); ghostMesh=null; }
+    flashHint(editMode ? 'Bearbeiten: Segment einfach antippen' : 'Bau-Modus aktiv');
+  });
+
+  bindTap(rotateBtn, ()=>{
+    if(!selectedRoot) return;
+    selectedRoot.rotation.y += Math.PI/2;
+  });
+  bindTap(deleteBtn, ()=>{
+    if(!selectedRoot) return;
+    scene.remove(selectedRoot);
+    const bi = buildings.indexOf(selectedRoot);
+    if(bi>-1) buildings.splice(bi,1);
+    unregisterCollidables(selectedRoot);
+    clearSelection();
+  });
+
+  tileButtons.forEach(btn=>{
+    bindTap(btn, ()=>{
+      if(!selectedRoot || selectedRoot.userData.type !== 'wall') return;
+      const idx = parseInt(btn.dataset.tile, 10);
+      toggleTile(selectedRoot, idx);
+    });
+  });
+
+  function toggleTile(root, idx){
+    const tile = root.userData.tiles[idx];
+    tile.visible = !tile.visible;
+    const ci = collidables.indexOf(tile);
+    if(tile.visible && ci===-1) collidables.push(tile);
+    if(!tile.visible && ci>-1) collidables.splice(ci,1);
+    refreshTileButtons();
+    flashHint(tile.visible ? 'Segment geschlossen' : 'Segment geöffnet');
+  }
+
+  // Direktes Antippen in der Welt: ein Tipp auf ein Wand-Segment öffnet/schließt
+  // es sofort (wie das Editieren in Fortnite) - kein Umweg über die Auswahl nötig.
+  // Boden/Rampe werden per Tipp ausgewählt, damit Drehen/Löschen verfügbar wird.
+  const editRaycaster = new THREE.Raycaster();
+  function editTapAt(clientX, clientY){
+    const ndc = new THREE.Vector2(
+      (clientX/innerWidth)*2 - 1,
+      -(clientY/innerHeight)*2 + 1
+    );
+    editRaycaster.setFromCamera(ndc, camera);
+    const hits = editRaycaster.intersectObjects(buildings, true); // rekursiv wg. Wand-Segmenten
+    if(!hits.length){ clearSelection(); return; }
+    const obj = hits[0].object;
+    const root = obj.userData.isPiece ? obj : (obj.userData.parentPiece || null);
+    if(!root) return;
+
+    clearSelection();
+    selectedRoot = root;
+    setEmissiveAll(selectedRoot, 0x3dd6ff);
+    editPanel.classList.add('show');
+
+    if(root.userData.type === 'wall'){
+      tileGrid.classList.add('show');
+      tileHint.style.display = 'block';
+      refreshTileButtons();
+      // direkt getroffenes Segment sofort umschalten
+      if(obj.userData && typeof obj.userData.tileIndex === 'number'){
+        toggleTile(root, obj.userData.tileIndex);
+      }
+    }
+  }
+
+  // Sofort reagierende, mehrfach-touch-taugliche Button-Bindung.
+  // Wird direkt bei touchstart ausgelöst (nicht erst beim click), damit
+  // Tippen auf Buttons nie durch Joystick-/Umschau-Touches blockiert wird
+  // und mehrere Buttons gleichzeitig mit verschiedenen Fingern funktionieren.
+  function bindTap(el, fn){
+    let firedByTouch = false;
+    el.addEventListener('touchstart', (e)=>{
+      e.stopPropagation();
+      e.preventDefault();
+      firedByTouch = true;
+      el.classList.add('pressed');
+      fn();
+    }, {passive:false});
+    el.addEventListener('touchend', (e)=>{
+      e.stopPropagation();
+      el.classList.remove('pressed');
+    }, {passive:true});
+    el.addEventListener('touchcancel', ()=>{ el.classList.remove('pressed'); }, {passive:true});
+    el.addEventListener('click', ()=>{
+      if(firedByTouch){ firedByTouch=false; return; } // Ghost-Click nach touch ignorieren
+      fn(); // Desktop-Maus-Fallback
+    });
+  }
+
+  // ---------- Steuerung ----------
+  let yaw = 0, pitch = 0;
+  const player = { x:0, y:0, z:8, vy:0, onGround:true, height:1.6 };
+
+  // Joystick
+  const joyZone = document.getElementById('joystickZone');
+  const joyKnob = document.getElementById('joystickKnob');
+  let joyTouchId = null;
+  let joyVec = {x:0,y:0};
+  const JOY_RADIUS = 55;
+
+  function joyRect(){ return joyZone.getBoundingClientRect(); }
+
+  function setJoyFromTouch(t){
+    const r = joyRect();
+    const cx = r.left + r.width/2, cy = r.top + r.height/2;
+    let dx = t.clientX - cx, dy = t.clientY - cy;
+    const len = Math.hypot(dx,dy);
+    if(len > JOY_RADIUS){ dx = dx/len*JOY_RADIUS; dy = dy/len*JOY_RADIUS; }
+    joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    joyVec.x = dx/JOY_RADIUS; joyVec.y = dy/JOY_RADIUS;
+  }
+  function resetJoy(){
+    joyKnob.style.transform = 'translate(0,0)';
+    joyVec.x = 0; joyVec.y = 0;
+  }
+
+  // Look (Kamera) via Touch-Drag
+  let lookTouchId = null;
+  let lastLookX = 0, lastLookY = 0;
+  const LOOK_SENS = 0.0032;
+
+  function isInsideRect(el, x, y){
+    const r = el.getBoundingClientRect();
+    return x>=r.left && x<=r.right && y>=r.top && y<=r.bottom;
+  }
+
+  document.addEventListener('touchstart', (e)=>{
+    for(const t of e.changedTouches){
+      if(joyTouchId===null && isInsideRect(joyZone, t.clientX, t.clientY)){
+        joyTouchId = t.identifier;
+        setJoyFromTouch(t);
+        continue;
+      }
+      const target = document.elementFromPoint(t.clientX, t.clientY);
+      const onButton = target && target.closest && target.closest('.interactive');
+      if(onButton) continue; // Buttons kümmern sich per bindTap selbst um sich
+      if(lookTouchId===null){
+        lookTouchId = t.identifier;
+        lastLookX = t.clientX; lastLookY = t.clientY;
+        if(editMode){ editTapAt(t.clientX, t.clientY); }
+      }
+    }
+  }, {passive:true});
+
+  document.addEventListener('touchmove', (e)=>{
+    let prevent = false;
+    for(const t of e.changedTouches){
+      if(t.identifier === joyTouchId){ setJoyFromTouch(t); prevent = true; }
+      else if(t.identifier === lookTouchId){
+        const dx = t.clientX - lastLookX, dy = t.clientY - lastLookY;
+        yaw -= dx*LOOK_SENS;
+        pitch -= dy*LOOK_SENS;
+        pitch = Math.max(-1.35, Math.min(1.35, pitch));
+        lastLookX = t.clientX; lastLookY = t.clientY;
+        prevent = true;
+      }
+    }
+    if(prevent) e.preventDefault();
+  }, {passive:false});
+
+  document.addEventListener('touchend', (e)=>{
+    for(const t of e.changedTouches){
+      if(t.identifier === joyTouchId){ joyTouchId=null; resetJoy(); }
+      if(t.identifier === lookTouchId){ lookTouchId=null; }
+    }
+  }, {passive:true});
+  document.addEventListener('touchcancel', (e)=>{
+    for(const t of e.changedTouches){
+      if(t.identifier === joyTouchId){ joyTouchId=null; resetJoy(); }
+      if(t.identifier === lookTouchId){ lookTouchId=null; }
+    }
+  }, {passive:true});
+
+  // Sprung
+  bindTap(document.getElementById('jumpBtn'), ()=>{
+    if(player.onGround){ player.vy = 7.2; player.onGround=false; }
+  });
+
+  // ---------- Hinweistext ----------
+  const hintEl = document.getElementById('hint');
+  let hintTimer = null;
+  function flashHint(msg){
+    hintEl.textContent = msg;
+    hintEl.style.opacity = '1';
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(()=>{ hintEl.style.opacity = '0'; }, 2200);
+  }
+
+  // ---------- Physik / Bewegung ----------
+  const downRay = new THREE.Raycaster();
+  const MOVE_SPEED = 6.2;
+  const GRAVITY = 18;
+
+  function groundHeightAt(x,z, fromY){
+    downRay.set(new THREE.Vector3(x, fromY, z), new THREE.Vector3(0,-1,0));
+    downRay.far = 40;
+    const hits = downRay.intersectObjects(collidables, false);
+    if(hits.length){ return hits[0].point.y; }
+    return 0;
+  }
+
+  function update(dt){
+    // Blickrichtung
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+
+    // Bewegungsrichtung relativ zur Blickrichtung (nur Yaw)
+    const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const moveX = right.x*joyVec.x + forward.x*(-joyVec.y);
+    const moveZ = right.z*joyVec.x + forward.z*(-joyVec.y);
+    const moveLen = Math.hypot(moveX, moveZ);
+    if(moveLen > 0.001){
+      player.x += (moveX/moveLen) * MOVE_SPEED * dt * Math.min(moveLen,1);
+      player.z += (moveZ/moveLen) * MOVE_SPEED * dt * Math.min(moveLen,1);
+    }
+
+    // Schwerkraft & Boden
+    player.vy -= GRAVITY*dt;
+    player.y += player.vy*dt;
+    const gY = groundHeightAt(player.x, player.z, player.y+3);
+    if(player.y <= gY){
+      player.y = gY;
+      player.vy = 0;
+      player.onGround = true;
+    } else {
+      player.onGround = false;
+    }
+
+    camera.position.set(player.x, player.y+player.height, player.z);
+
+    // Bau-Vorschau
+    if(!editMode){
+      const {cell, dominantX, sign} = currentTargetCell();
+      if(!ghostMesh || ghostMesh.userData.cell.cx!==cell.cx || ghostMesh.userData.cell.cy!==cell.cy ||
+         ghostMesh.userData.cell.cz!==cell.cz || ghostMesh.userData.type!==selectedPiece ||
+         ghostMesh.userData.dominantX!==dominantX || ghostMesh.userData.sign!==sign){
+        updateGhost(cell, dominantX, sign);
+      }
+    }
+  }
+
+  // ---------- Loop ----------
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min((now-last)/1000, 0.05);
+    last = now;
+    update(dt);
+    renderer.render(scene, camera);
+    requestAnimationFrame(loop);
+  }
+
+  document.getElementById('loading').style.display = 'none';
+  requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
