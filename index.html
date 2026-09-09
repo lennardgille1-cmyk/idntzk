@@ -86,6 +86,47 @@
   }
   #editToggle.on{background:linear-gradient(180deg,var(--accent2),#1b8fab); color:#00232b; border-color:transparent;}
 
+  /* Einstellungen */
+  #settingsPanel{
+    position:fixed; inset:0; background:rgba(6,9,14,0.72); display:none;
+    align-items:center; justify-content:center; z-index:40; pointer-events:none;
+  }
+  #settingsPanel.show{display:flex; pointer-events:auto;}
+  #settingsCard{
+    width:min(340px, 88vw); background:#141a24; border:1px solid var(--panel-border);
+    border-radius:18px; padding:18px; color:#fff; box-shadow:0 10px 30px rgba(0,0,0,0.5);
+  }
+  #settingsCard h3{margin:0 0 14px; font-size:16px;}
+  .settingRow{margin-bottom:16px;}
+  .settingRow label{display:block; font-size:13px; margin-bottom:6px; opacity:0.9;}
+  .settingRow input[type=range]{width:100%;}
+  .sensVal{float:right; opacity:0.7; font-variant-numeric:tabular-nums;}
+  #repoToggleRow{
+    display:flex; align-items:center; justify-content:space-between;
+    background:rgba(255,255,255,0.06); padding:10px 12px; border-radius:12px; margin-bottom:14px;
+  }
+  #repoToggleRow span{font-size:13px;}
+  .switch{
+    width:46px; height:26px; border-radius:14px; background:#3a4658; position:relative; border:1px solid rgba(255,255,255,0.2);
+  }
+  .switch .knob{
+    position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
+    background:#cfd6e0; transition:left .15s ease, background .15s ease;
+  }
+  .switch.on{background:linear-gradient(180deg,var(--accent2),#1b8fab);}
+  .switch.on .knob{left:22px; background:#fff;}
+  #settingsCloseBtn{
+    width:100%; padding:12px; border-radius:12px; background:linear-gradient(180deg,var(--accent),#c99a1e);
+    color:#1a1300; font-weight:800; border:none; font-size:14px;
+  }
+  #repoHint{
+    position:fixed; top:70px; left:50%; transform:translateX(-50%); z-index:35;
+    background:rgba(61,214,255,0.16); border:1px solid var(--accent2); color:#fff;
+    padding:8px 14px; border-radius:10px; font-size:12.5px; display:none; pointer-events:none; text-align:center;
+  }
+  #repoHint.show{display:block;}
+  .draggableActive{outline:2px dashed var(--accent2); outline-offset:3px;}
+
   #editPanel{
     position:fixed; left:50%; bottom:150px; transform:translateX(-50%);
     display:none; flex-direction:column; align-items:center; gap:10px; pointer-events:auto;
@@ -141,7 +182,32 @@
 
   <div id="topBar">
     <div id="title">🏗️ Baukampf</div>
-    <button id="editToggle" class="ui-btn interactive">✏️<span>Editieren</span></button>
+    <div style="display:flex; gap:8px;">
+      <button id="settingsBtn" class="ui-btn interactive">⚙️<span>Optionen</span></button>
+      <button id="editToggle" class="ui-btn interactive">✏️<span>Editieren</span></button>
+    </div>
+  </div>
+
+  <div id="repoHint">Ziehe den Editieren- oder Platzieren-Button an eine neue Stelle</div>
+
+  <div id="settingsPanel">
+    <div id="settingsCard" class="interactive">
+      <h3>⚙️ Einstellungen</h3>
+
+      <div class="settingRow">
+        <label>Umschau-Empfindlichkeit <span id="sensLabel" class="sensVal">1.0x</span></label>
+        <input type="range" id="sensSlider" min="0.3" max="3" step="0.1" value="1">
+      </div>
+
+      <div id="repoToggleRow">
+        <span>Buttons frei verschieben</span>
+        <div id="repoSwitch" class="switch interactive"><div class="knob"></div></div>
+      </div>
+
+      <button id="resetLayoutBtn" class="ui-btn interactive" style="width:100%; flex-direction:row; gap:8px; margin-bottom:10px;">↺<span>Position zurücksetzen</span></button>
+
+      <button id="settingsCloseBtn" class="interactive">Fertig</button>
+    </div>
   </div>
 
   <div id="hint">Bauteil wählen, in Blickrichtung erscheint die Vorschau, dann 🔨 Platzieren tippen</div>
@@ -344,7 +410,7 @@
   // Geist-Vorschau: folgt immer der Blickrichtung
   let ghostMesh = null;
   function updateGhost(cell, dominantX, sign){
-    if(ghostMesh){ scene.remove(ghostMesh); ghostMesh=null; }
+    if(ghostMesh){ scene.remove(ghostMesh); disposePieceObject(ghostMesh); ghostMesh=null; }
     ghostMesh = makePieceMesh(selectedPiece, cell, dominantX, sign, true);
     scene.add(ghostMesh);
   }
@@ -380,7 +446,7 @@
   }
 
   function buildPiece(){
-    if(editMode) return;
+    if(editMode || repositionMode) return;
     const {cell, dominantX, sign} = currentTargetCell();
     const root = makePieceMesh(selectedPiece, cell, dominantX, sign, false);
     scene.add(root);
@@ -426,10 +492,11 @@
   }
 
   bindTap(editToggle, ()=>{
+    if(repositionMode) return;
     editMode = !editMode;
     editToggle.classList.toggle('on', editMode);
     clearSelection();
-    if(ghostMesh){ scene.remove(ghostMesh); ghostMesh=null; }
+    if(ghostMesh){ scene.remove(ghostMesh); disposePieceObject(ghostMesh); ghostMesh=null; }
     flashHint(editMode ? 'Bearbeiten: Segment einfach antippen' : 'Bau-Modus aktiv');
   });
 
@@ -443,6 +510,7 @@
     const bi = buildings.indexOf(selectedRoot);
     if(bi>-1) buildings.splice(bi,1);
     unregisterCollidables(selectedRoot);
+    disposePieceObject(selectedRoot);
     clearSelection();
   });
 
@@ -520,6 +588,100 @@
     });
   }
 
+  // ---------- Speicher sauber halten (verhindert Aussetzer nach längerem Spielen) ----------
+  // Geist-Vorschau und gelöschte Bauteile werden mit neuen Geometrien erzeugt.
+  // Ohne explizites dispose() sammeln sich GPU-Ressourcen an, bis der Browser
+  // irgendwann den WebGL-Kontext verliert und Vorschau/Rendering einfrieren.
+  function disposePieceObject(obj){
+    if(!obj) return;
+    obj.traverse(child=>{
+      if(child.isMesh){
+        if(child.geometry) child.geometry.dispose();
+        const mat = child.material;
+        const isSharedGhostMat = mat===ghostMaterials.wall || mat===ghostMaterials.floor || mat===ghostMaterials.ramp;
+        if(mat && mat.dispose && !isSharedGhostMat) mat.dispose();
+      }
+    });
+  }
+
+  // ---------- Einstellungen (Sensitivität, freies Verschieben der Buttons) ----------
+  const settingsBtn = document.getElementById('settingsBtn');
+  const settingsPanel = document.getElementById('settingsPanel');
+  const settingsCloseBtn = document.getElementById('settingsCloseBtn');
+  const sensSlider = document.getElementById('sensSlider');
+  const sensLabel = document.getElementById('sensLabel');
+  const repoSwitch = document.getElementById('repoSwitch');
+  const repoHint = document.getElementById('repoHint');
+  const resetLayoutBtn = document.getElementById('resetLayoutBtn');
+
+  let repositionMode = false;
+  const draggableEls = [];
+
+  bindTap(settingsBtn, ()=>{ settingsPanel.classList.add('show'); });
+  bindTap(settingsCloseBtn, ()=>{ settingsPanel.classList.remove('show'); });
+  settingsPanel.addEventListener('click', (e)=>{ if(e.target===settingsPanel) settingsPanel.classList.remove('show'); });
+
+  sensSlider.addEventListener('input', ()=>{
+    lookSensMultiplier = parseFloat(sensSlider.value);
+    LOOK_SENS = LOOK_SENS_BASE * lookSensMultiplier;
+    sensLabel.textContent = lookSensMultiplier.toFixed(1) + 'x';
+  });
+
+  function setRepositionMode(on){
+    repositionMode = on;
+    repoSwitch.classList.toggle('on', on);
+    repoHint.classList.toggle('show', on);
+    draggableEls.forEach(el => el.classList.toggle('draggableActive', on));
+  }
+  bindTap(repoSwitch, ()=> setRepositionMode(!repositionMode));
+
+  bindTap(resetLayoutBtn, ()=>{
+    draggableEls.forEach(el=>{
+      el.style.left=''; el.style.top=''; el.style.right=''; el.style.bottom=''; el.style.transform='';
+    });
+    document.getElementById('placeBtn').style.transform = 'translateX(-50%)';
+    flashHint('Position zurückgesetzt');
+  });
+
+  // Macht ein Element per Touch frei verschiebbar - aber nur solange
+  // repositionMode aktiv ist, sonst funktioniert der Button ganz normal.
+  function makeDraggable(el){
+    draggableEls.push(el);
+    let dragging = false, dragTouchId = null, offX = 0, offY = 0;
+    el.addEventListener('touchstart', (e)=>{
+      if(!repositionMode) return;
+      e.stopPropagation(); e.preventDefault();
+      const t = e.changedTouches[0];
+      dragTouchId = t.identifier;
+      const r = el.getBoundingClientRect();
+      offX = t.clientX - r.left;
+      offY = t.clientY - r.top;
+      el.style.right=''; el.style.bottom=''; el.style.transform='none';
+      el.style.left = r.left+'px'; el.style.top = r.top+'px';
+      dragging = true;
+    }, {passive:false});
+    el.addEventListener('touchmove', (e)=>{
+      if(!dragging) return;
+      for(const t of e.changedTouches){
+        if(t.identifier !== dragTouchId) continue;
+        e.preventDefault(); e.stopPropagation();
+        const w = el.offsetWidth, h = el.offsetHeight;
+        let x = Math.max(4, Math.min(innerWidth-w-4, t.clientX-offX));
+        let y = Math.max(4, Math.min(innerHeight-h-4, t.clientY-offY));
+        el.style.left = x+'px';
+        el.style.top = y+'px';
+      }
+    }, {passive:false});
+    function endDrag(e){
+      if(!dragging) return;
+      for(const t of e.changedTouches){ if(t.identifier===dragTouchId){ dragging=false; dragTouchId=null; } }
+    }
+    el.addEventListener('touchend', endDrag, {passive:true});
+    el.addEventListener('touchcancel', endDrag, {passive:true});
+  }
+  makeDraggable(document.getElementById('placeBtn'));
+  makeDraggable(editToggle);
+
   // ---------- Steuerung ----------
   let yaw = 0, pitch = 0;
   const player = { x:0, y:0, z:8, vy:0, onGround:true, height:1.6 };
@@ -550,7 +712,9 @@
   // Look (Kamera) via Touch-Drag
   let lookTouchId = null;
   let lastLookX = 0, lastLookY = 0;
-  const LOOK_SENS = 0.0032;
+  const LOOK_SENS_BASE = 0.0032;
+  let lookSensMultiplier = 1;
+  let LOOK_SENS = LOOK_SENS_BASE * lookSensMultiplier;
 
   function isInsideRect(el, x, y){
     const r = el.getBoundingClientRect();
