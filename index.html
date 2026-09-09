@@ -471,7 +471,39 @@
   }
   function labelFor(t){ return t==='wall'?'Wand':(t==='floor'?'Boden':'Rampe'); }
 
-  bindTap(document.getElementById('placeBtn'), buildPiece);
+  // Platzieren-Button: gedrückt halten baut wiederholt (schnelles Bauen),
+  // ein Antippen reicht für ein einzelnes Bauteil. Das Umschauen mit einem
+  // zweiten Finger läuft komplett unabhängig weiter, da es ein separater
+  // Touch-Punkt ist und dieser Button ihn nie blockiert.
+  function bindHoldRepeat(el, fn, intervalMs){
+    let firedByTouch = false;
+    let repeatTimer = null;
+    function safeFn(){ try{ fn(); }catch(err){ console.error('Button-Fehler:', err); } }
+    function startRepeat(){
+      safeFn();
+      clearInterval(repeatTimer);
+      repeatTimer = setInterval(safeFn, intervalMs);
+    }
+    function stopRepeat(){ clearInterval(repeatTimer); repeatTimer = null; }
+    el.addEventListener('touchstart', (e)=>{
+      e.stopPropagation();
+      e.preventDefault();
+      firedByTouch = true;
+      el.classList.add('pressed');
+      startRepeat();
+    }, {passive:false});
+    el.addEventListener('touchend', (e)=>{
+      e.stopPropagation();
+      el.classList.remove('pressed');
+      stopRepeat();
+    }, {passive:true});
+    el.addEventListener('touchcancel', ()=>{ el.classList.remove('pressed'); stopRepeat(); }, {passive:true});
+    el.addEventListener('click', ()=>{
+      if(firedByTouch){ firedByTouch=false; return; }
+      safeFn(); // Desktop-Maus-Fallback
+    });
+  }
+  bindHoldRepeat(document.getElementById('placeBtn'), buildPiece, 220);
 
   // ---------- Bearbeiten-Modus (Fortnite-artig: Wand-Segmente einzeln öffnen) ----------
   let editMode = false;
