@@ -56,9 +56,14 @@
   .ui-btn.wide{width:auto; padding:0 16px; flex-direction:row; gap:8px;}
 
   #jumpBtn{
-    position:fixed; right:96px; bottom:186px; width:60px; height:60px; border-radius:50%;
-    background:var(--panel); border:1px solid var(--panel-border); color:#fff; font-size:11px; font-weight:700;
+    position:fixed; right:96px; bottom:186px; width:72px; height:72px; border-radius:50%;
+    background:linear-gradient(180deg,#4a5a70,#242e3c); border:2px solid rgba(255,255,255,0.35);
+    color:#fff; font-size:12px; font-weight:800; letter-spacing:0.2px;
     display:flex; align-items:center; justify-content:center; pointer-events:auto;
+    box-shadow:0 5px 14px rgba(0,0,0,0.4);
+  }
+  #jumpBtn.pressed, #jumpBtn:active{
+    background:linear-gradient(180deg,#3dd6ff,#1b8fab); border-color:transparent;
   }
 
   .ui-btn:active, #placeBtn:active, #jumpBtn:active, .tileBtn:active,
@@ -561,6 +566,8 @@
       if(obj.userData && typeof obj.userData.tileIndex === 'number'){
         toggleTile(root, obj.userData.tileIndex);
       }
+    } else {
+      flashHint(labelFor(root.userData.type) + ' ausgewählt – Drehen oder Löschen möglich');
     }
   }
 
@@ -570,12 +577,13 @@
   // und mehrere Buttons gleichzeitig mit verschiedenen Fingern funktionieren.
   function bindTap(el, fn){
     let firedByTouch = false;
+    function safeFn(){ try{ fn(); }catch(err){ console.error('Button-Fehler:', err); } }
     el.addEventListener('touchstart', (e)=>{
       e.stopPropagation();
       e.preventDefault();
       firedByTouch = true;
       el.classList.add('pressed');
-      fn();
+      safeFn();
     }, {passive:false});
     el.addEventListener('touchend', (e)=>{
       e.stopPropagation();
@@ -584,7 +592,7 @@
     el.addEventListener('touchcancel', ()=>{ el.classList.remove('pressed'); }, {passive:true});
     el.addEventListener('click', ()=>{
       if(firedByTouch){ firedByTouch=false; return; } // Ghost-Click nach touch ignorieren
-      fn(); // Desktop-Maus-Fallback
+      safeFn(); // Desktop-Maus-Fallback
     });
   }
 
@@ -637,7 +645,8 @@
 
   bindTap(resetLayoutBtn, ()=>{
     draggableEls.forEach(el=>{
-      el.style.left=''; el.style.top=''; el.style.right=''; el.style.bottom=''; el.style.transform='';
+      el.style.left=''; el.style.top=''; el.style.right=''; el.style.bottom='';
+      el.style.transform=''; el.style.position='';
     });
     document.getElementById('placeBtn').style.transform = 'translateX(-50%)';
     flashHint('Position zurückgesetzt');
@@ -645,6 +654,9 @@
 
   // Macht ein Element per Touch frei verschiebbar - aber nur solange
   // repositionMode aktiv ist, sonst funktioniert der Button ganz normal.
+  // capture:true ist wichtig, damit das Ziehen auch funktioniert, wenn el ein
+  // Container mit eigenen antippbaren Kindern ist (z.B. die Bauteil-Leiste) -
+  // der Container bekommt den Touch dann VOR den Kind-Buttons zu sehen.
   function makeDraggable(el){
     draggableEls.push(el);
     let dragging = false, dragTouchId = null, offX = 0, offY = 0;
@@ -656,10 +668,14 @@
       const r = el.getBoundingClientRect();
       offX = t.clientX - r.left;
       offY = t.clientY - r.top;
+      // Fix: manche Buttons (z.B. Editieren) liegen normalerweise als Flex-Kind
+      // in einer Leiste und reagieren sonst nicht auf left/top - erst position:fixed
+      // löst sie sauber aus dem Layout und macht sie frei verschiebbar.
+      el.style.position = 'fixed';
       el.style.right=''; el.style.bottom=''; el.style.transform='none';
       el.style.left = r.left+'px'; el.style.top = r.top+'px';
       dragging = true;
-    }, {passive:false});
+    }, {passive:false, capture:true});
     el.addEventListener('touchmove', (e)=>{
       if(!dragging) return;
       for(const t of e.changedTouches){
@@ -671,16 +687,18 @@
         el.style.left = x+'px';
         el.style.top = y+'px';
       }
-    }, {passive:false});
+    }, {passive:false, capture:true});
     function endDrag(e){
       if(!dragging) return;
       for(const t of e.changedTouches){ if(t.identifier===dragTouchId){ dragging=false; dragTouchId=null; } }
     }
-    el.addEventListener('touchend', endDrag, {passive:true});
-    el.addEventListener('touchcancel', endDrag, {passive:true});
+    el.addEventListener('touchend', endDrag, {passive:true, capture:true});
+    el.addEventListener('touchcancel', endDrag, {passive:true, capture:true});
   }
   makeDraggable(document.getElementById('placeBtn'));
   makeDraggable(editToggle);
+  makeDraggable(document.getElementById('buildBar'));   // Wand/Boden/Rampe als Gruppe
+  makeDraggable(document.getElementById('jumpBtn'));
 
   // ---------- Steuerung ----------
   let yaw = 0, pitch = 0;
@@ -734,7 +752,7 @@
       if(lookTouchId===null){
         lookTouchId = t.identifier;
         lastLookX = t.clientX; lastLookY = t.clientY;
-        if(editMode){ editTapAt(t.clientX, t.clientY); }
+        if(editMode){ try{ editTapAt(t.clientX, t.clientY); }catch(err){ console.error('Editier-Fehler:', err); } }
       }
     }
   }, {passive:true});
@@ -768,9 +786,11 @@
     }
   }, {passive:true});
 
-  // Sprung
+  // Sprung: mit kurzem Eingabe-Puffer + Coyote-Time, damit ein Tipp auf den
+  // Sprung-Button immer "ankommt", auch wenn er 1-2 Frames zu früh/spät kommt.
+  let jumpBufferTimer = 0;
   bindTap(document.getElementById('jumpBtn'), ()=>{
-    if(player.onGround){ player.vy = 7.2; player.onGround=false; }
+    jumpBufferTimer = 0.15;
   });
 
   // ---------- Hinweistext ----------
@@ -786,7 +806,9 @@
   // ---------- Physik / Bewegung ----------
   const downRay = new THREE.Raycaster();
   const MOVE_SPEED = 6.2;
-  const GRAVITY = 18;
+  const GRAVITY = 19;
+  const JUMP_SPEED = 7.6;
+  let coyoteTimer = 0; // kurze Gnadenfrist nach Verlassen des Bodens, in der Springen noch klappt
 
   function groundHeightAt(x,z, fromY){
     downRay.set(new THREE.Vector3(x, fromY, z), new THREE.Vector3(0,-1,0));
@@ -825,6 +847,18 @@
       player.onGround = false;
     }
 
+    // Sprung-Timer: Boden-Gnadenfrist + Eingabe-Puffer für sofortiges Ansprechen
+    if(player.onGround) coyoteTimer = 0.12; else coyoteTimer = Math.max(0, coyoteTimer - dt);
+    if(jumpBufferTimer > 0){
+      jumpBufferTimer = Math.max(0, jumpBufferTimer - dt);
+      if(coyoteTimer > 0){
+        player.vy = JUMP_SPEED;
+        player.onGround = false;
+        coyoteTimer = 0;
+        jumpBufferTimer = 0;
+      }
+    }
+
     camera.position.set(player.x, player.y+player.height, player.z);
 
     // Bau-Vorschau
@@ -839,12 +873,20 @@
   }
 
   // ---------- Loop ----------
+  // Wichtig: Falls in einem Frame irgendwo ein Fehler auftritt (z.B. durch
+  // eine ungewöhnliche Kombination aus Editieren + Bewegen), darf das nicht
+  // die ganze Schleife stoppen - sonst "friert" das Spiel komplett ein und
+  // weder Bewegung noch Platzieren funktionieren mehr.
   let last = performance.now();
   function loop(now){
     const dt = Math.min((now-last)/1000, 0.05);
     last = now;
-    update(dt);
-    renderer.render(scene, camera);
+    try {
+      update(dt);
+      renderer.render(scene, camera);
+    } catch(err){
+      console.error('Frame-Fehler (ignoriert, Spiel läuft weiter):', err);
+    }
     requestAnimationFrame(loop);
   }
 
